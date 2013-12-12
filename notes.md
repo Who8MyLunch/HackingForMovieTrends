@@ -20,8 +20,8 @@ efforts.
 Early Morning Thinking
 ----------------------
 
-Very early this morning I could not sleep as I kept thinking about this effort.  I kept reviewing in
-my head details of the objective in the section above.  I need a way to make sense of text
+Very early this morning I could not sleep as I kept thinking about this effort.  I kept reviewing
+in my head details of the objective in the section above.  I need a way to make sense of text
 describing a movie.  A quick search on Github turned up this great Python package:
 [TextBlob](https://github.com/sloria/TextBlob).  The text from the website says:
 
@@ -30,10 +30,39 @@ describing a movie.  A quick search on Github turned up this great Python packag
     sentiment analysis, classification, translation, and more.
 
 Behind the scenes it uses [NLTK](http://www.nltk.org/) and
-[patterns](http://www.clips.ua.ac.be/pages/pattern-en).  I've never done anything significant with
-text processing.  This tools is a great place to start!
+[patterns](http://www.clips.ua.ac.be/pages/pattern-en).  I've have not done much with natural
+language text processing.  This tools will be a great place to start!
 
+I found a nice web API for querrying information from IMDb and RottenTomatoes:
+[The OMDb API](http://www.omdbapi.com/).  For example, this query for information about the movie
+Star Wars, `http://www.omdbapi.com/?s=Star%20Wars1` yields this JSON response:
 
-[The OMDb API](http://www.omdbapi.com/)
+    {"Search": [{"Title": "Star Wars", "Year": "1977",
+                 "imdbID": "tt0076759", "Type": "movie"},
+                {"Title": "Star Wars: Episode V - The Empire Strikes Back", "Year": "1980",
+                 "imdbID": "tt0080684", "Type": "movie"},
+                {"Title": "Star Wars: Episode VI - Return of the Jedi", "Year": "1983",
+                 "imdbID": "tt0086190", "Type": "movie"},
+                {"Title": "Star Wars: Episode I - The Phantom Menace", "Year": "1999",
+                 "imdbID": "tt0120915", "Type": "movie"},
+                {"Title": "Star Wars: Episode III - Revenge of the Sith", "Year": "2005",
+                 "imdbID": "tt0121766", "Type": "movie"},
+                {"Title": "Star Wars: Episode II - Attack of the Clones", "Year": "2002",
+                 "imdbID": "tt0121765", "Type": "movie"},
+                {"Title": "Star Wars: The Clone Wars", "Year": "2008",
+                 "imdbID": "tt1185834", "Type": "movie"},
+                {"Title": "Star Wars: The Clone Wars", "Year": "2008",
+                "imdbID": "tt0458290", "Type": "series"},
+                {"Title": "Star Wars: Clone Wars", "Year": "2003",
+                 "imdbID": "tt0361243", "Type": "series"},
+                {"Title": "The Star Wars Holiday Special", "Year": "1978",
+                 "imdbID": "tt0193524", "Type": "movie"}]}
 
-[Sequel Movies 2012](http://www.movieinsider.com/movies/sequel/2012)
+Its just a bit more work to also retrieve information from RottenTomatoes using the imdbID as a
+reference number.
+
+Next I wanted a list of intersting movies to play with.  I found this list of titles from 2012 for
+sequels of popular movies: [Sequel Movies 2012](http://www.movieinsider.com/movies/sequel/2012).  I
+figure I'll need to manipulate some of that data by hand just to get it done quickly.  I would
+normally write some code, but right now this is a one-time deal.
+
