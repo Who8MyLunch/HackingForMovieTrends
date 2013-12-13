@@ -66,3 +66,4 @@ sequels of popular movies: [Sequel Movies 2012](http://www.movieinsider.com/movi
 figure I'll need to manipulate some of that data by hand just to get it done quickly.  I would
 normally write some code, but right now this is a one-time deal.
 
+Ok, the rest of this documentation is going to take place in the ipython notebook.
