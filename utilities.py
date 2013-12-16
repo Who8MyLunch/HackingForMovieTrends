@@ -1,3 +1,6 @@
+
+from __future__ import division, print_function, unicode_literals
+
 import re
 try:
     from htmlentitydefs import name2codepoint
@@ -6,15 +9,13 @@ except ImportError:
     from html.entities import name2codepoint
     unichr = chr
 
-name2codepoint = name2codepoint.copy()
-name2codepoint['apos']=ord("'")
 
-EntityPattern = re.compile('&(?:#(\d+)|(?:#x([\da-fA-F]+))|([a-zA-Z]+));')
-
-
-def unescape(match):
+def unescaper(match):
     """Custom un-escape function.
     """
+    name2codepoint_work = name2codepoint.copy()
+    name2codepoint_work['apos']=ord("'")
+
     code = match.group(1)
     if code:
         return unichr(int(code, 10))
@@ -24,15 +25,19 @@ def unescape(match):
             return unichr(int(code, 16))
         else:
             code = match.group(3)
-            if code in name2codepoint:
-                return unichr(name2codepoint[code])
+            if code in name2codepoint_work:
+                return unichr(name2codepoint_work[code])
+
     return match.group(0)
 
 
 def decode(s, encoding='utf-8'):
     """Decode string entity.
     """
-    return EntityPattern.sub(unescape, s.decode(encoding))
+    EntityPattern = re.compile('&(?:#(\d+)|(?:#x([\da-fA-F]+))|([a-zA-Z]+));')
+    result = EntityPattern.sub(unescaper, s.decode(encoding))
+
+    return result
 
 #####################################################
 
@@ -45,4 +50,3 @@ if __name__ == '__main__':
 
     print(t1)
     print(t2)
-
