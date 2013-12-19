@@ -2,6 +2,7 @@
 from __future__ import division, print_function, unicode_literals
 
 import re
+
 try:
     from htmlentitydefs import name2codepoint
 except ImportError:
@@ -34,7 +35,7 @@ def unescaper(match):
 def decode(s, encoding='utf-8'):
     """Decode string entity.
     """
-    EntityPattern = re.compile('&(?:#(\d+)|(?:#x([\da-fA-F]+))|([a-zA-Z]+));')
+    EntityPattern = re.compile(u'&(?:#(\d+)|(?:#x([\da-fA-F]+))|([a-zA-Z]+));')
     result = EntityPattern.sub(unescaper, s.decode(encoding))
 
     return result
