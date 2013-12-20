@@ -40,6 +40,17 @@ def decode(s, encoding='utf-8'):
 
     return result
 
+
+def extract_url(text):
+    result = re.search("(?P<url>https?://[^\s]+)", text)
+    if result:
+        url = result.group("url")
+    else:
+        url = None
+
+    return url
+
+
 #####################################################
 
 if __name__ == '__main__':
