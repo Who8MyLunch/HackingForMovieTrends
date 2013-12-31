@@ -1,4 +1,6 @@
 arrow
-twython
 requests
+import requests_oauthlib
+oauthlib
 textblob
+BeautifulSoup

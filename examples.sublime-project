@@ -7,10 +7,6 @@
 		},
 		{
 			"follow_symlinks": true,
-			"path": "/home/pierre/Projects/twython/twython"
-		},
-		{
-			"follow_symlinks": true,
 			"path": "/home/pierre/Projects/Utilities/Data_IO/data_io"
 		}
 	]
