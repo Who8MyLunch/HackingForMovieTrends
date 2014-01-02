@@ -71,3 +71,8 @@ def write(fname, data):
     # Write to file.
     with open(fname, 'w') as fo:
         fo.write(serial)
+
+
+def pretty(data_dict):
+    s = json.dumps(data_dict, sort_keys=True, indent=4, separators=(',', ': '))
+    return s

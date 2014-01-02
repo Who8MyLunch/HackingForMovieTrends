@@ -14,115 +14,90 @@ Twitter OAuth-2
 
 import os
 import time
-import glob
 
 import numpy as np
 import requests
-import requests_oauthlib
-import oauthlib
 import arrow
 import BeautifulSoup
 
-import json_io
 import yaml_io
+import json_io
+
+import utilities
+import errors
 
 #################################################
 
 
-def authenticate(fname_api='twitter_api.yml'):
-    """Generate a requests.Session object authorized via OAuth-2.
+def id_from_name(name):
+    name = os.path.basename(name)
 
-    Twitter API urls:
-     - url_api = 'https://api.twitter.com'
-     - url_request_oauth1_token = url_api + '/oauth/request_token'
-     - url_request_oauth2_token = url_api + '/oauth2/token'
-     - url_authorize = url_api + '/oauth/authorize'
-     - url_access_token = url_api + '/oauth/access_token'
+    b, e = os.path.splitext(name)
+    parts = b.split('_')
+    id_str = parts[2]
+
+    return int(id_str)
+
+
+def timestamp_from_name(fname):
+    tw = Tweet.from_file(fname)
+
+    return tw.timestamp
+
+
+def filter(tweet):
+    """Test if supplied Tweet is acceptable (i.e. not SPAM).
+
+    More ideas:
+     - Direct Message?
+     - Following disproportionate, compared to number following them.
+
     """
-    # Load application's Twitter API details.
-    info_twitter = yaml_io.read(fname_api)
+    # Individual tests for undesirable tweet.
+    flag_source = not tweet.source == 'unknown'
+    flag_url = not tweet.has_url
+    flag_retweet = not tweet.retweet
 
-    client_key = info_twitter['consumer_key']
-    # client_secret = info_twitter['consumer_secret']
-    access_token = info_twitter['access_token']
+    # Tweet is OK if all tests pass.
+    flag_ok = flag_source and flag_url and flag_retweet
 
-    # Backend client / desktop client application workflow.
-    client = oauthlib.oauth2.BackendApplicationClient(client_key)
-    token = {'access_token': access_token, 'token_type': 'Bearer'}
-
-    # Generate requests.Session object.
-    session = requests_oauthlib.OAuth2Session(client, token=token)
-
-    return session
-
-
-def rate_limit_from_api(session, resources='search'):
-    """Query Twitter API for current rate limit status.
-    """
-    url_status = 'https://api.twitter.com/1.1/application/rate_limit_status.json'
-    params = {'resources': resources}
-
-    # Request information from Twitter.
-    response = session.get(url_status, params=params)
-
-    # Interpret the results.
-    info_status = response.json()
-
-    try:
-        info_search = info_status['resources']['search']['/search/tweets']
-    except KeyError:
-        code = info_status['errors'][0]['code']
-        if code == 88:
-            message = info_status['errors'][0]['message']
-            raise ValueError(message)
-        else:
-            raise
-
-    reset = arrow.get(info_search['reset'])
-     # - arrow.now()
-    # minutes = delta.total_seconds() / 60.
-
-    limit = info_search['limit']
-    remaining = info_search['remaining']
-
-    info = {'limit': limit, 'remaining': remaining, 'reset': reset}
-
-    return info
-
-
-def rate_limit_from_header(hdr):
-    """Parse rate limit information from response header.
-    """
-    limit = hdr['x-rate-limit-limit']
-    remaining = hdr['x-rate-limit-remaining']
-
-    reset = arrow.get(hdr['x-rate-limit-reset'])
-
-    info = {'limit': limit, 'remaining': remaining, 'reset': reset}
-
-    return info
+    return flag_ok
 
 #################################################
 
 
 class Tweet(object):
+
+    pattern = 'tw_????-??-??_*.json'
+
     def __init__(self, json):
         self._json = json
         self._id = int(self._json['id_str'])
+
+    def __repr__(self):
+        """A nicely-formatted representation of Tweet's internal JSON data.
+        """
+        t = 'Tweet Object:\n'
+        s = json_io.pretty(self._json)
+        return t + s
 
     @property
     def has_url(self):
         return len(self._json['entities']['urls']) > 0
 
     @property
+    def url(self):
+        if self.has_url:
+            return self._json['entities']['urls'][0]['expanded_url']
+        else:
+            return None
+
+    @property
     def url_title(self):
         """Return title of first URL page, if URL exists.
         """
         if self.has_url:
-            # Grab the first URL.
-            url = self._json['entities']['urls'][0]['expanded_url']
-
-            resp = requests.get(url)
+            resp = requests.get(self.url)
             soup = BeautifulSoup.BeautifulSoup(resp.content)
             results = soup.title.string
         else:
@@ -146,6 +121,21 @@ class Tweet(object):
 
     @property
     def source(self):
+        """Utility used to post the Tweet, as an HTML-formatted string.
+        """
+        src = self._json['source']
+
+        # Parse HTML for app type.
+        apps = ['web', 'txt', 'iphone', 'android', 'blackberry']
+        for a in apps:
+            if a in src.lower():
+                return a
+
+        # Source not specified in above list.
+        return 'unknown'
+
+    @property
+    def source_full(self):
         """Utility used to post the Tweet, as an HTML-formatted string.
         """
         return self._json['source']
@@ -190,19 +180,20 @@ class Tweet(object):
     @property
     def coordinates(self):
         """The longitude and latitude of the Tweet's location.
-        A tuple in the form (longitude, latitude).
+        If present, a tuple in the form (longitude, latitude),
+        otherwise, None.
         """
         return self._json['coordinates']
 
     @property
     def name(self):
-        """Unique name for this tweet, suitable for use as a file name.  Does not include
+        """Unique name for this Tweet, suitable for use as a file name.  Does not include
         the extension and does not include full path.
         """
-        fname = 'tw_{:d}-{:02d}-{:02d}_{:d}.json'.format(self.timestamp.year,
-                                                         self.timestamp.month,
-                                                         self.timestamp.day,
-                                                         self.id_int)
+        fname = 'tw_{:d}-{:02d}-{:02d}_{:d}'.format(self.timestamp.year,
+                                                    self.timestamp.month,
+                                                    self.timestamp.day,
+                                                    self.id_int)
         return fname
 
     def serialize(self, path=None):
@@ -212,7 +203,7 @@ class Tweet(object):
             path = os.path.join(os.path.curdir, 'tweets')
 
         if not os.path.isdir(path):
-            os.mkdir(path)
+            os.makedirs(path)
 
         fname = os.path.join(path, self.name + '.json')
         json_io.write(fname, self._json)
@@ -221,8 +212,7 @@ class Tweet(object):
 
     @staticmethod
     def from_file(fname):
-        """Instanciate a Tweet object from previously-serialized Tweet object.
-
+        """Instantiate a Tweet object from previously-serialized Tweet object.
         """
         b, e = os.path.splitext(fname)
         fname = b + '.json'
@@ -241,61 +231,102 @@ class Tweet(object):
 class Tweet_Manager(object):
     """Manage a collection of Tweets received as a result of performing a query to Twitter's API.
     """
-    def __init__(self, query, path_base=None):
-        self._query = query
+    def __init__(self, path_base=None, warn_repeat=False):
+        # self._query = query
 
         self._min_id = np.inf
         self._max_id = 0
 
-        # Folder containing managed tweets.
-        folder = 'TQ_' + query.replace(' ', '+')
+        self.warn_repeat = warn_repeat
+
         if not path_base:
             path_base = os.path.abspath(os.path.curdir)
 
-        # Full path to tweets folder.
-        self._path_tweets = os.path.join(path_base, folder)
-        if not os.path.isdir(self._path_tweets):
-            os.mkdir(self._path_tweets)
+        self._path = path_base
 
-        # Update min and max ID numbers.
-        self.scan_min_max_id()
+        if not os.path.isdir(self._path):
+            os.makedirs(self._path)
+
+        # Dict of all managed Tweets.  Mapping from Tweet ID to full path file name.
+        self._id_toc = {}
+        self._id_ordered = []
+
+        # Dict of cached Tweets.  Mapping from Tweet ID to Tweet object.
+        # self._cache = {}
+
+        # Find Tweets.
+        self.scan_files()
 
     @property
-    def path_tweets(self):
-        return self._path_tweets
-
-    @property
-    def query(self):
-        return self._query
-
-    @property
-    def files(self):
-        """Sequence of all Tweets' file names.
-        example: fname = 'tw_2013-12-24_415303361420726273.json'
+    def path(self):
+        """Top-level folder containing Tweets and/or folders with more Tweets.
         """
-        p = os.path.join(self.path_tweets, 'tw_????-??-??_*.json')
-        files = glob.glob(p)
-        files = np.sort(files)
+        return self._path
 
-        return files
+    def scan_files(self):
+        """Scan file system, reference all found Tweets.  Return Tweet count.
+        """
+        self._count = 0
+        self._id_toc = {}
+        self._id_ordered = []
+
+        finder = utilities.file_finder(self.path, Tweet.pattern)
+        for f in finder:
+            self.add_tweet_file(f, do_sort=False)
+
+        # Sort the IDs now that we're done.
+        self._id_ordered.sort()
+
+        return self.count
+
+    def add_tweet_file(self, tw_f, do_sort=True):
+        """Add Tweet file to collection.
+        """
+        if not os.path.isfile(tw_f):
+            raise IOError('Input file does not exist: {:s}'.format(tw_f))
+
+        id_int = id_from_name(tw_f)
+
+        if id_int in self._id_toc:
+            if self.warn_repeat:
+                raise errors.TwitterError('Repeated tweet: {:s}'.format(tw_f))
+            else:
+                # Quietly handle the issue.  Don't add the Tweet.
+                return self.count
+
+        self._id_toc[id_int] = tw_f
+        self._id_ordered.append(id_int)
+
+        self._count += 1
+        self.update_min_max_id(id_int)
+
+        if do_sort:
+            self._id_ordered.sort()
+
+        return self.count
+
+    def add_tweet_obj(self, tw_o):
+        """Add Tweet object to collection.  Save to file.
+        """
+        if not isinstance(tw_o, Tweet):
+            raise errors.TwitterError('Input object must be of type Tweet')
+
+        folder = '{:d}-{:02d}-{:02d}'.format(tw_o.timestamp.year,
+                                             tw_o.timestamp.month,
+                                             tw_o.timestamp.day)
+
+        path_save = os.path.join(self.path, folder)
+
+        tw_f = tw_o.serialize(path_save)
+        self.add_tweet_file(tw_f)
+
+        return self.count
 
     @property
     def count(self):
         """Number of Tweets in this collection.
         """
-        return len(self.files)
-
-    def id_from_name(self, fname):
-        b, e = os.path.splitext(fname)
-        parts = b.split('_')
-        id_str = parts[3]
-
-        return int(id_str)
-
-    def timestamp_from_name(self, fname):
-        tw = Tweet.from_file(fname)
-
-        return tw.timestamp
+        return self._count
 
     def update_min_max_id(self, id_int):
         if id_int < self._min_id:
@@ -303,11 +334,6 @@ class Tweet_Manager(object):
 
         if id_int > self._max_id:
             self._max_id = id_int
-
-    def scan_min_max_id(self):
-        for f in self.files:
-            id_int = self.id_from_name(f)
-            self.update_min_max_id(id_int)
 
     @property
     def min_id(self):
@@ -322,82 +348,160 @@ class Tweet_Manager(object):
         if not self.count:
             return None
 
-        f = self.files[0]
-        return self.timestamp_from_name(f)
+        f = self._id_toc[self.min_id]
+        return timestamp_from_name(f)
 
     @property
     def max_timestamp(self):
         if not self.count:
             return None
 
-        f = self.files[-1]
-        return self.timestamp_from_name(f)
+        f = self._id_toc[self.max_id]
+        return timestamp_from_name(f)
+
+    @property
+    def ids(self):
+        """Sequence of all ordered IDs.
+        """
+        return self._id_ordered
+
+    def tweet_from_id(self, tweet_id):
+        """Return Tweet object for corresponding Tweet ID.
+        """
+        id_int = int(tweet_id)
+        f = self._id_toc[id_int]
+
+        tw = Tweet.from_file(f)
+
+        return tw
+
+    @property
+    def tweets(self):
+        """Iterator (generator) over all Tweets, sorted by ID.
+        """
+        for id_int in self._id_ordered:
+            yield self.tweet_from_id(id_int)
 
 #################################################
 
 
 class Search_Manager(Tweet_Manager):
-    """Add search capability on top of existing Tweet_Manager.
+    """Add search capability on top of Tweet_Manager class.
     """
 
     # Type of search to be fetched from Twitter API.
     _result_type = 'recent'  # 'recent' | 'popular' | 'mixed'
 
-    def __init__(self, session, query, path_base=None):
-        """Instanciate a new Search_Manager object.
+    def __init__(self, session, query, path_base=None, warn_repeat=False):
+        """Instantiate a new Search_Manager object.
         """
-        super(Search_Manager, self).__init__(query, path_base=path_base)
+
+        folder_query = query.lower().replace(' ', '_')
+        path_query = os.path.join(path_base, folder_query)
+
+        super(Search_Manager, self).__init__(path_base=path_query, warn_repeat=warn_repeat)
 
         # Requests.session object.
         self._session = session
 
+        self._query = query
+
         # Search results generator.
-        self._searcher = Tweet_Search(self._session)
+        self._searcher = Search(self._session)
 
     @property
-    def limit(self):
-        return self._searcher.limit
+    def query(self):
+        return self._query
 
     @property
-    def remaining(self):
-        return self._searcher.remaining
+    def api_limit(self):
+        return self._searcher.api_limit
 
     @property
-    def seconds(self):
-        return self._searcher.seconds
+    def api_remaining(self):
+        return self._searcher.api_remaining
+
+    @property
+    def api_seconds(self):
+        return self._searcher.api_seconds
+
+    @property
+    def api_minutes(self):
+        return self._searcher.api_minutes
+
+    def search_continuous(self):
+        """Keep searching..."""
+
+        keep_looping = True
+        while keep_looping:
+            print('count: {:d}'.format(self.count))
+
+            try:
+                ok_api = self.search(refresh=True)
+
+                # Check if hit API limit.
+                if ok_api:
+                    # Search ended without hitting API limit.
+                    print('Search ended.')
+                    keep_looping = False
+                else:
+                    # Hit API limit.  Wait until timeout expires, then try again.
+                    dt = self.api_seconds + 10
+                    m = int(dt / 60.)
+                    s = dt - m * 60
+
+                    print('Waiting for API timeout: {:02d}:{:02}'.format(m, s))
+                    time.sleep(dt)
+
+            except KeyboardInterrupt:
+                # Exit main loop.
+                print('User interupt!')
+                keep_looping = False
+
+            print('count: {:d}'.format(self.count))
 
     def search(self, refresh=True):
-        """Search for tweets.  Automatically continue where left off previously.
-        """
-        gen = self._searcher.run(self.query, max_id=self.min_id - 1, result_type=self._result_type)
-        for tw in gen:
-            if not tw.has_url:
-                tw.serialize(path=self.path_tweets)
-                self.update_min_max_id(tw.id_int)
+        """Search for tweets."""
 
-        if refresh:
-            self.update()
+        try:
+            # Search for older Tweets.  Automatically continue where left off previously.
+            gen = self._searcher.run(self.query,
+                                     max_id=self.min_id - 1,
+                                     result_type=self._result_type)
+            for tw in gen:
+                self.add_tweet_obj(tw)
 
-    def update(self):
-        """Search for new tweets since last search.
-        """
-        gen = self._searcher.run(self.query, since_id=self.max_id, result_type=self._result_type)
-        for tw in gen:
-            if not tw.has_url:
-                tw.serialize(path=self.path_tweets)
-                self.update_min_max_id(tw.id_int)
+            # Search for new tweets since last search.
+            gen = self._searcher.run(self.query,
+                                     since_id=self.max_id,
+                                     result_type=self._result_type)
+            for tw in gen:
+                self.add_tweet_obj(tw)
+
+        except errors.APILimitError:
+            return False
+
+        return True
 
 #################################################
 
 
-class Tweet_Search(object):
+class Search(object):
     def __init__(self, session):
-        """Tweet Search helper.
+        """Twitter Search API helper class.
 
         Parameters
         ----------
         session : requests.Session object authorized via OAuth-2.
         """
+
+        # http://stackoverflow.com/questions/4028904/how-to-get-the-home-directory-in-python
+        path_config = os.path.join(os.path.expanduser('~'), '.tweet_finder')
+        if not os.path.isdir(path_config):
+            os.mkdir(path_config)
+
+        self.fname_config = os.path.join(path_config, 'config.yml')
+
         count = 100  # requested "tweets per page"
 
         self.session = session
@@ -409,9 +513,10 @@ class Tweet_Search(object):
         self._remaining = None
         self._reset = None
 
+        self.load_config()
         self.initialize_rate_limits()
 
-    def run(self, query, since_id=0, max_id=np.inf, result_type='mixed', lang='en'):
+    def run(self, query, since_id=0, max_id=np.inf, result_type='recent', lang='en'):
         """Generator yielding individual tweets matching supplied query string.
 
         Parameters
@@ -426,7 +531,7 @@ class Tweet_Search(object):
             if since_id > 0 and max_id < np.inf:
                 if since_id >= max_id:
                     msg = 'Invalid ID values: {:d} vs {:d}'.format(since_id, max_id)
-                    raise ValueError(msg)
+                    raise errors.TwitterError(msg)
 
             params = {'q': query,
                       'count': self.count,
@@ -451,10 +556,14 @@ class Tweet_Search(object):
             try:
                 tweets = info_search['statuses']
             except KeyError:
-                raise ValueError(info_search['errors'][0]['message'])
+                msg = info_search['errors'][0]['message']
+                self._remaining = 0
+                self.save_config()
+
+                raise errors.APILimitError('API limit exceeded: {:s}'.format(msg))
 
             if len(tweets) == 0:
-                # No results returned.
+                # No results returned.  All done for now.
                 raise StopIteration
 
             # Loop over returned tweets.
@@ -466,26 +575,58 @@ class Tweet_Search(object):
 
                 yield tw
 
-            # A little pause between requests.  Be nice to Twitter?
-            time.sleep(0.1)
+            # A little pause between requests.
+            time.sleep(0.01)
+
+    def load_config(self):
+        try:
+            info = yaml_io.read(self.fname_config)
+        except IOError:
+            info = None
+
+        if info:
+            self._limit = int(info['limit'])
+            self._remaining = int(info['remaining'])
+            self._reset = int(info['reset'])
+        else:
+            # Set safe default values.
+            self._limit = 15 * 60
+            self._remaining = 0
+            self._reset = None
+
+    def save_config(self):
+        info = {'limit': int(self._limit),
+                'remaining': int(self._remaining),
+                'reset': int(self._reset)}
+
+        yaml_io.write(self.fname_config, info)
 
     def initialize_rate_limits(self):
-        """Inialize rate limits via API call.
+        """Initialize limit values via rate-limit API call.
         """
-        info = rate_limit_from_api(self.session)
+        try:
+            info = utilities.rate_limit_from_api(self.session)
 
-        self._limit = info['limit']
-        self._remaining = info['remaining']
-        self._reset = info['reset']
+            self._limit = int(info['limit'])
+            self._remaining = int(info['remaining'])
+            self._reset = int(info['reset'])
+
+            self.save_config()
+        except Exception as e:
+            print(e)
+            1 / 0
+            # test for apropriate error type here.
 
     def update_rate_limits(self, hdr):
-        """Update API rate limits from response header.
+        """Update API rate limits from just-received response header.
         """
-        info = rate_limit_from_header(hdr)
+        info = utilities.rate_limit_from_header(hdr)
 
-        self._limit = info['limit']
-        self._remaining = info['remaining']
-        self._reset = info['reset']
+        self._limit = int(info['limit'])
+        self._remaining = int(info['remaining'])
+        self._reset = int(info['reset'])
+
+        self.save_config()
 
     @property
     def api_limit(self):
@@ -503,7 +644,20 @@ class Tweet_Search(object):
     def api_seconds(self):
         """Seconds to wait before API limit is automatically reset.
         """
-        delta = self._reset - arrow.now()
+
+        seconds_max = 15. * 60.  # 15 minutes max.
+
+        reset = arrow.get(self._reset)
+        delta = reset - arrow.now()
         seconds = delta.total_seconds()
 
+        if seconds > seconds_max:
+            seconds = seconds_max
+
         return seconds
+
+    @property
+    def api_minutes(self):
+        """Minutes to wait before API limit is automatically reset.
+        """
+        return self.api_seconds / 60.
