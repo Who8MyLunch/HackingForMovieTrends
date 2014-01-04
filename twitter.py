@@ -430,11 +430,11 @@ class Search_Manager(Tweet_Manager):
         return self._searcher.api_minutes
 
     def search_continuous(self):
-        """Keep searching..."""
-
+        """Keep searching...
+        """
         keep_looping = True
         while keep_looping:
-            print('count: {:d}'.format(self.count))
+            print('\nCount: {:d}'.format(self.count))
 
             try:
                 ok_api = self.search(refresh=True)
@@ -445,14 +445,20 @@ class Search_Manager(Tweet_Manager):
                     print('Search ended.')
                     keep_looping = False
                 else:
-                    # Hit API limit.  Wait until timeout expires, then try again.
                     if self.api_remaining > 1:
                         # Probably not a rate-limit problem.  Just wait a short bit.
                         dt = 30.  # seconds.
+
                         print('Network something what??')
+                        print('Seconds: {:f}'.format(self.api_seconds))
+                        print('Remaining: {:d}'.format(self.api_remaining))
                     else:
+                        # Probably hit API limit.  Wait until timeout expires, then try again.
                         dt = self.api_seconds
+
                         print('API rate limit')
+                        print('Seconds: {:f}'.format(self.api_seconds))
+                        print('Remaining: {:d}'.format(self.api_remaining))
 
                     if dt < 0:
                         dt = 0.
@@ -464,7 +470,6 @@ class Search_Manager(Tweet_Manager):
                     print('Waiting: {:2d}:{:02}'.format(m, s))
 
                     print('Count: {:d}'.format(self.count))
-                    print()
 
                     time.sleep(dt)
 
@@ -473,11 +478,9 @@ class Search_Manager(Tweet_Manager):
                 print('User interupt!')
                 keep_looping = False
 
-            print('count: {:d}'.format(self.count))
-
     def search(self, refresh=True):
-        """Search for tweets."""
-
+        """Search for tweets.
+        """
         try:
             # Search for older Tweets.  Automatically continue where left off previously.
             gen = self._searcher.run(self.query,
@@ -544,6 +547,11 @@ class Search(object):
         max_id : int
         result_type : str, 'mixed', 'recent', 'popular'
         """
+
+        self.initialize_rate_limits()
+
+        time_pause = 0.1
+
         # Main loop over requests to Twitter API endpoint.
         while True:
             if since_id > 0 and max_id < np.inf:
@@ -587,7 +595,7 @@ class Search(object):
                 # No results returned.  All done for now.
                 raise StopIteration
 
-            # Loop over returned tweets.
+            # Loop over returned tweets, yield them to caller.
             for json in tweets:
                 tw = Tweet(json)
 
@@ -597,7 +605,7 @@ class Search(object):
                 yield tw
 
             # A little pause between requests.
-            time.sleep(0.1)
+            time.sleep(time_pause)
 
     def load_config(self):
         try:
@@ -633,10 +641,9 @@ class Search(object):
             self._reset = int(info['reset'])
 
             self.save_config()
-        except Exception as e:
+        except Exception as e:  # test for appropriate error type here.
             print(e)
-            1 / 0
-            # test for apropriate error type here.
+            raise
 
     def update_rate_limits(self, hdr):
         """Update API rate limits from just-received response header.
@@ -665,7 +672,6 @@ class Search(object):
     def api_seconds(self):
         """Seconds to wait before API limit is automatically reset.
         """
-
         seconds_max = 15. * 60.  # 15 minutes max.
 
         reset = arrow.get(self._reset)
@@ -674,6 +680,12 @@ class Search(object):
 
         if seconds > seconds_max:
             seconds = seconds_max
+
+        if seconds < 0:
+            # Uhhh... how did we get here?
+            # It's Ok.  Just means we have stale information.  It will get updated very shortly.
+            # raise errors.WierdError
+            pass
 
         return seconds
 
