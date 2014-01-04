@@ -14,5 +14,5 @@ class APILimitError(TwitterError):
     pass
 
 
-# class ThingError(TwitterError):
-#     pass
+class NetworkError(TwitterError):
+    pass

@@ -446,11 +446,26 @@ class Search_Manager(Tweet_Manager):
                     keep_looping = False
                 else:
                     # Hit API limit.  Wait until timeout expires, then try again.
-                    dt = self.api_seconds + 10
+                    if self.api_remaining > 1:
+                        # Probably not a rate-limit problem.  Just wait a short bit.
+                        dt = 30.  # seconds.
+                        print('Network something what??')
+                    else:
+                        dt = self.api_seconds
+                        print('API rate limit')
+
+                    if dt < 0:
+                        dt = 0.
+
+                    # Minutes and seconds.
                     m = int(dt / 60.)
                     s = dt - m * 60
 
-                    print('Waiting for API timeout: {:02d}:{:02}'.format(m, s))
+                    print('Waiting: {:2d}:{:02}'.format(m, s))
+
+                    print('Count: {:d}'.format(self.count))
+                    print()
+
                     time.sleep(dt)
 
             except KeyboardInterrupt:
@@ -479,6 +494,9 @@ class Search_Manager(Tweet_Manager):
                 self.add_tweet_obj(tw)
 
         except errors.APILimitError:
+            return False
+
+        except errors.NetworkError:
             return False
 
         return True
@@ -545,7 +563,10 @@ class Search(object):
                 params['max_id'] = max_id
 
             # Request information from Twitter REST API.
-            response = self.session.get(self.url_search, params=params)
+            try:
+                response = self.session.get(self.url_search, params=params)
+            except requests.ConnectionError as e:
+                raise errors.NetworkError(e)
 
             self.update_rate_limits(response.headers)
 
@@ -576,7 +597,7 @@ class Search(object):
                 yield tw
 
             # A little pause between requests.
-            time.sleep(0.01)
+            time.sleep(0.1)
 
     def load_config(self):
         try:

@@ -159,11 +159,14 @@ def rate_limit_from_api(session, resources='search'):
 def rate_limit_from_header(hdr):
     """Parse rate limit information from response header.
     """
-    limit = hdr['x-rate-limit-limit']
-    remaining = hdr['x-rate-limit-remaining']
-    reset = hdr['x-rate-limit-reset']
+    try:
+        limit = hdr['x-rate-limit-limit']
+        remaining = hdr['x-rate-limit-remaining']
+        reset = hdr['x-rate-limit-reset']
 
-    info = {'limit': limit, 'remaining': remaining, 'reset': reset}
+        info = {'limit': limit, 'remaining': remaining, 'reset': reset}
+    except KeyError:
+        info = None
 
     return info
 
