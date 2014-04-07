@@ -467,9 +467,8 @@ class Search_Manager(Tweet_Manager):
                     m = int(dt / 60.)
                     s = dt - m * 60
 
-                    print('Waiting: {:2d}:{:02}'.format(m, s))
-
                     print('Count: {:d}'.format(self.count))
+                    print('Waiting: {:2d}:{:02}...'.format(m, s))
 
                     time.sleep(dt)
 
